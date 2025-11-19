@@ -1,0 +1,789 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
+<title>Polarity Chain — Playable Prototype</title>
+<style>
+  /* Prevent overscroll and touch scrolling on mobile */
+  html,body{height:100%;margin:0;background:#050819;color:#dfe7ff;font-family:Inter,system-ui,Segoe UI,Roboto,Arial;overscroll-behavior:none;touch-action:none;}
+  canvas{display:block;margin:0 auto;background:linear-gradient(180deg,#06101a,#041018);touch-action:none;}
+  #ui{position:fixed;left:12px;top:10px;z-index:10}
+  .info{font-family:Orbitron,monospace;letter-spacing:1px}
+  #pol{position:fixed;right:12px;top:10px;padding:8px 12px;border-radius:999px;background:rgba(255,255,255,0.03);font-weight:700;z-index:10}
+  #menu{position:fixed;left:50%;top:50%;transform:translate(-50%,-50%);text-align:center;z-index:20}
+  button{padding:10px 18px;border-radius:12px;border:0;background:#1f6feb;color:#fff;font-weight:700;margin:6px;cursor:pointer}
+  #overlay{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:18}
+  .card{background:rgba(6,8,12,0.95);padding:22px;border-radius:14px;text-align:center;max-width:360px;color:#dfe7ff}
+  .small{font-size:13px;color:#aabbdc}
+  #instrModal{position:fixed;inset:0;display:none;align-items:center;justify-content:center;z-index:30}
+  .closeBtn{background:#e74c3c}
+  #powerups{position:fixed;left:12px;bottom:12px;z-index:12;font-family:Orbitron,monospace}
+  #combo{position:fixed;left:50%;transform:translateX(-50%);top:12px;z-index:12;font-family:Orbitron,monospace}
+  .score-animation {
+    position: absolute;
+    font-family: Orbitron, monospace;
+    font-weight: bold;
+    pointer-events: none;
+    z-index: 15;
+    text-shadow: 0 0 8px rgba(255,255,255,0.8);
+    animation: floatUp 1.2s ease-out forwards;
+  }
+  @keyframes floatUp {
+    0% { transform: translateY(0); opacity: 1; }
+    100% { transform: translateY(-60px); opacity: 0; }
+  }
+
+  /* Mobile touch controls */
+  #touchControls { position: fixed; right: 12px; bottom: 12px; z-index: 60; display:flex; flex-direction:column; gap:10px; }
+  .touch-btn { width:58px; height:58px; border-radius:50%; background:rgba(255,255,255,0.06); color:#fff; border:0; font-size:20px; display:flex; align-items:center; justify-content:center; box-shadow: 0 6px 18px rgba(0,0,0,0.6); }
+  .touch-btn:active { transform: scale(0.98); }
+
+  @media (max-width:420px){
+    .card{padding:16px;margin:10px}
+    button{padding:10px 14px}
+  }
+</style>
+</head>
+<body>
+<!-- Intro Animation -->
+<video id="introVideo" playsinline webkit-playsinline preload="auto" style="
+    position:fixed;
+    inset:0;
+    width:100%;
+    height:100%;
+    object-fit:cover;
+    z-index:9999;
+    background:black;
+" >
+  <source src="intro.mp4" type="video/mp4">
+</video>
+
+<canvas id="c"></canvas>
+
+<div id="ui">
+  <div class="info">Length: <span id="len">0</span></div>
+</div>
+<div id="pol"><span id="polTxt">N</span></div>
+
+<div id="powerups" class="small">Shield: <span id="shieldTxt">0</span> &nbsp; Boost: <span id="boostTxt">0</span> &nbsp; Slow: <span id="slowTxt">0</span></div>
+<div id="combo" class="small">Combo: <span id="comboTxt">x1</span></div>
+
+<!-- Clean Start / Menu overlay (no description) -->
+<div id="menu">
+  <div id="overlay">
+    <div class="card">
+      <h1 style="margin:0 0 12px;font-family:Orbitron,monospace">POLARITY CHAIN</h1>
+
+      <div>
+        <button id="startBtn">Start Game</button>
+        <button id="instrBtn" style="background:#2ecc71">Instructions</button>
+      </div>
+
+      <div style="margin-top:16px;font-size:12px;color:#aabbdc">
+        Best: <span id="bestSpan">0</span>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Instructions modal -->
+<div id="instrModal">
+  <div class="card" style="max-width:420px;">
+    <h2 style="margin:0 0 8px;font-family:Orbitron,monospace">How to Play</h2>
+    <div class="small" style="text-align:left;line-height:1.5;">
+      <ul>
+        <li>Drag to move the magnet (left/right + simulated depth).</li>
+        <li>Quick tap (no drag) flips polarity between <b>N</b> and <b>S</b>.</li>
+        <li>Collect opposite-pole spheres to attach and grow your chain. Score = chain length.</li>
+        <li>Hazards end the run only when the <b>magnet head image</b> collides with them. Chain collisions sever links instead.</li>
+        <li>Pick up power-ups: <b>⚡ Boost</b>, <b>🐌 Slow</b>, <b>🛡️ Shield</b>.</li>
+      </ul>
+    </div>
+    <div style="margin-top:12px;">
+      <button id="instrClose">Close</button>
+      <button class="closeBtn" id="instrClose2">Close & Start</button>
+    </div>
+  </div>
+</div>
+
+<!-- Touch controls (mobile) -->
+<div id="touchControls" aria-hidden="false" style="display:none;">
+  <button id="flipBtn" class="touch-btn" title="Flip Polarity">↺</button>
+  <button id="pauseBtn" class="touch-btn" title="Pause">II</button>
+</div>
+
+<script>
+(() => {
+  // canvas & sizing
+  const canvas = document.getElementById('c');
+  const ctx = canvas.getContext('2d', { alpha: false });
+
+  // Responsive canvas with DPR handling
+  let W = 360, H = 640; // defaults
+  function resizeCanvas() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2); // cap for perf
+    W = Math.max(360, innerWidth);
+    H = Math.max(568, innerHeight);
+    canvas.style.width = W + "px";
+    canvas.style.height = H + "px";
+    canvas.width = Math.floor(W * dpr);
+    canvas.height = Math.floor(H * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // draw in CSS pixels
+  }
+  resizeCanvas();
+  window.addEventListener('resize', resizeCanvas);
+
+  // UI elements
+  const lenEl = document.getElementById('len');
+  const polTxt = document.getElementById('polTxt');
+  const bestSpan = document.getElementById('bestSpan');
+  const shieldTxt = document.getElementById('shieldTxt');
+  const boostTxt = document.getElementById('boostTxt');
+  const slowTxt = document.getElementById('slowTxt');
+  const comboTxt = document.getElementById('comboTxt');
+
+  // Load magnet image (optional). Put magnet.png next to this file.
+  const magnetImg = new Image();
+  magnetImg.src = 'magnet.png';
+  magnetImg.onerror = ()=>{ magnetImg._error = true; };
+  const MAGNET_SCALE = 0.35;
+
+  // game state
+  let running = false;
+  let best = parseInt(localStorage.getItem('pc_best')||'0',10);
+  bestSpan.textContent = best;
+  let t = 0;
+  let timeScale = 1;
+
+  // magnet
+  const magnet = {
+    x: W*0.5, y: H*0.6, z: 0,
+    targetX: W*0.5, targetY: H*0.6, targetZ: 0,
+    radius: 30,
+    polarity: 'N',
+    attractRadius: 220,
+    shield: 0,
+    boost: 0
+  };
+
+  // chain
+  const chain = { links: [], restDist: 22 };
+
+  // objects
+  const collectibles = [];
+  const hazards = [];
+  const powerups = [];
+  const particles = [];
+  const scoreAnimations = [];
+
+  // combo
+  let combo = 1;
+  let comboTimer = 0;
+
+  // input
+  let pointerDown = false;
+  let lastPointer = {x:0,y:0,t:0};
+  let movedSinceDown = false;
+
+  // powerup emoji config
+  const POWERUP_CONFIG = {
+    boost: { radius: 22, drawSize: 42, emoji: "⚡", color: "#91c7ff" },
+    slow:  { radius: 20, drawSize: 40, emoji: "🐌", color: "#90ee90" },
+    shield:{ radius: 22, drawSize: 44, emoji: "🛡️", color: "#ffd166" }
+  };
+
+  // Sound effects (placeholders using WebAudio beeps)
+  const sounds = {
+    flip: { play: ()=>{} },
+    attach: { play: ()=>{} },
+    pickup: { play: ()=>{} },
+    crash: { play: ()=>{} }
+  };
+
+  // Initialize sound effects (simple beeps for demo)
+  function initSounds() {
+    // Flip sound (short high beep)
+    sounds.flip = createBeep(800, 0.08, "sine");
+    // Attach sound (medium tone)
+    sounds.attach = createBeep(620, 0.12, "sine");
+    // Pickup sound (ascending tones)
+    sounds.pickup = createBeep([420, 660], 0.18, "square");
+    // Crash sound (low noise)
+    sounds.crash = createBeep(180, 0.26, "sawtooth");
+  }
+
+  // Create simple beep sound using Web Audio API
+  function createBeep(frequency, duration, type) {
+    try {
+      return {
+        play: () => {
+          const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+          const oscillator = audioCtx.createOscillator();
+          const gainNode = audioCtx.createGain();
+          oscillator.connect(gainNode);
+          gainNode.connect(audioCtx.destination);
+          oscillator.type = type;
+          if (Array.isArray(frequency)) {
+            oscillator.frequency.setValueAtTime(frequency[0], audioCtx.currentTime);
+            oscillator.frequency.exponentialRampToValueAtTime(frequency[1], audioCtx.currentTime + duration);
+          } else {
+            oscillator.frequency.value = frequency;
+          }
+          gainNode.gain.setValueAtTime(0.28, audioCtx.currentTime);
+          gainNode.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + duration);
+          oscillator.start(audioCtx.currentTime);
+          oscillator.stop(audioCtx.currentTime + duration);
+        }
+      };
+    } catch (e) {
+      return { play: () => {/* no-op */} };
+    }
+  }
+
+  // Audio initialization on user gesture (mobile autoplay policy)
+  let audioInitialized = false;
+  function initAudioOnGesture(){
+    if(audioInitialized) return;
+    audioInitialized = true;
+    try {
+      const AudioCtx = window.AudioContext || window.webkitAudioContext;
+      const ctxAudio = new AudioCtx();
+      // create small silent buffer to unlock audio on some browsers
+      const src = ctxAudio.createBufferSource();
+      const buffer = ctxAudio.createBuffer(1,1,22050);
+      src.buffer = buffer;
+      src.connect(ctxAudio.destination);
+      src.start(0);
+      // init sounds
+      initSounds();
+    } catch(e){
+      // ignore
+    }
+  }
+
+  // Fullscreen & orientation lock (call inside user gesture)
+  async function goFullscreenAndLock(){
+    try {
+      if (document.fullscreenEnabled && !document.fullscreenElement) {
+        await document.documentElement.requestFullscreen();
+      }
+      if (screen.orientation && screen.orientation.lock) {
+        try { await screen.orientation.lock('portrait'); } catch(e) {}
+      }
+    } catch(e){}
+  }
+
+  // utils
+  function rand(a,b){ return Math.random()*(b-a)+a; }
+
+  // start / end
+  function startRun(){
+    running = true; t = 0; timeScale = 1;
+    overlay.style.display = 'none';
+    collectibles.length = 0; hazards.length = 0; powerups.length = 0; particles.length = 0;
+    scoreAnimations.length = 0;
+    chain.links.length = 0;
+    chain.links.push({x:magnet.x, y:magnet.y + chain.restDist, z:0, px:magnet.x, py:magnet.y + chain.restDist});
+    magnet.x = W*0.5; magnet.y = H*0.6; magnet.polarity = 'N';
+    magnet.shield = 0; magnet.boost = 0;
+    lenEl.textContent = '0';
+    combo = 1; comboTimer = 0; updateComboUI(); updatePowerUI();
+    for(let i=0;i<3;i++) spawnWave(true);
+  }
+
+  function endRun(){
+    running = false;
+    overlay.style.display = 'flex';
+    overlay.querySelector('button').textContent = 'Retry';
+    const len = chain.links.length;
+    if(len > best){ best = len; localStorage.setItem('pc_best', best); bestSpan.textContent = best; }
+  }
+
+  // spawn
+  function spawnWave(initial=false){
+    const cx = W + 120;
+    const count = Math.floor(rand(5,9));
+    for(let i=0;i<count;i++){
+      const z = rand(-1,1);
+      const y = rand(H*0.2, H*0.9);
+      const x = cx + i * rand(80,160) + rand(-40,40);
+      collectibles.push({x,y,z,vx:-rand(80,160)*(1+t*0.03),vy:0,attached:false,pole:Math.random()<0.5?'N':'S',id:Math.random().toString(36).slice(2,8)});
+    }
+    if(Math.random()<0.6 || initial){
+      const hz = rand(-1,1);
+      const hy = rand(H*0.25, H*0.8);
+      hazards.push({x: W + rand(400,900), y: hy, z: hz, w: rand(120,260), h: rand(30,62), vx: -rand(100,200)*(1+t*0.03)});
+    }
+    if(Math.random() < 0.12 && !initial){
+      const pz = rand(-1,1);
+      const types = ['shield','slow','boost'];
+      powerups.push({type: types[Math.floor(Math.random()*types.length)], x: W + rand(300,800), y: rand(H*0.25,H*0.85), z: pz, vx: -rand(80,140), id: Math.random().toString(36).slice(2,8)});
+    }
+  }
+
+  // attach collectible to chain
+  function attachCollectible(col){
+    if(col.attached) return;
+    col.attached = true;
+    chain.links.push({x:col.x,y:col.y,z:col.z,px:col.x,py:col.y});
+    // Play attach sound
+    sounds.attach.play();
+    // Create score animation
+    createScoreAnimation(col.x, col.y, "+1", "#66ff66");
+    combo = Math.min(8, combo + 0.2);
+    comboTimer = 2.2;
+    spawnParticles(col.x, col.y, (col.pole==='N'?'#ff6b6b':'#66d0ff'), 10);
+  }
+
+  // Create score animation
+  function createScoreAnimation(x, y, text, color) {
+    scoreAnimations.push({
+      x: x,
+      y: y,
+      text: text,
+      color: color,
+      life: 1.2,
+      id: Math.random().toString(36).slice(2,8)
+    });
+  }
+
+  // particles
+  function spawnParticles(x,y,color,s=12){
+    for(let i=0;i<6;i++){
+      particles.push({x: x + rand(-6,6), y: y + rand(-6,6), life: 0.35 + Math.random()*0.25, color: color, size: s * (0.6 + Math.random()*0.8)});
+    }
+  }
+
+  // chain verlet simulation
+  function simulateChain(dt){
+    const links = chain.links;
+    for(let i=0;i<links.length;i++){
+      const p = links[i];
+      if(i===0) continue;
+      const nx = p.x + (p.x - p.px);
+      const ny = p.y + (p.y - p.py);
+      p.px = p.x; p.py = p.y;
+      p.x = nx; p.y = ny;
+    }
+    const iters = 4;
+    for(let k=0;k<iters;k++){
+      if(links.length>0){
+        const first = links[0];
+        const mx = magnet.x, my = magnet.y;
+        let dx = first.x - mx, dy = first.y - my;
+        let d = Math.sqrt(dx*dx+dy*dy)||0.001;
+        let diff = (d - chain.restDist)/d;
+        first.x -= dx * diff * 0.7;
+        first.y -= dy * diff * 0.7;
+      }
+      for(let i=0;i<links.length-1;i++){
+        const a = links[i], b = links[i+1];
+        let dx = b.x - a.x, dy = b.y - a.y;
+        let d = Math.sqrt(dx*dx+dy*dy)||0.001;
+        let diff = (d - chain.restDist)/d;
+        const adjust = 0.5;
+        b.x -= dx * diff * adjust;
+        b.y -= dy * diff * adjust;
+        a.x += dx * diff * adjust;
+        a.y += dy * diff * adjust;
+      }
+    }
+    for(let p of links){
+      p.x = Math.max(0, Math.min(W, p.x));
+      p.y = Math.max(0, Math.min(H, p.y));
+    }
+  }
+
+  // sever chain when links hit hazards (no game over)
+  function chainHazardCollision(h){
+    let collisionOccurred = false;
+    for(let i=0;i<chain.links.length;i++){
+      const p = chain.links[i];
+      if(Math.abs(p.z - h.z) > 0.55) continue;
+      if(p.x > h.x - 6 && p.x < h.x + h.w + 6 && p.y > h.y - h.h/2 -6 && p.y < h.y + h.h/2 +6){
+        const removeCount = Math.min(Math.max(2, Math.floor(1 + combo*0.6)), chain.links.length-1);
+        for(let r=0;r<removeCount;r++){
+          const rem = chain.links.pop();
+          if(rem) {
+            spawnParticles(rem.x, rem.y, '#ffffff', 8);
+            // Create negative score animation
+            createScoreAnimation(rem.x, rem.y, "-1", "#ff6666");
+          }
+        }
+        magnet.targetX += rand(-8,8);
+        magnet.targetY += rand(-6,6);
+        collisionOccurred = true;
+        break; // Only process one collision per frame
+      }
+    }
+    return collisionOccurred;
+  }
+
+  // pickup powerup
+  function pickupPowerup(pu){
+    if(pu.type==='shield'){
+      magnet.shield = 6.0;
+    } else if(pu.type==='slow'){
+      timeScale = 0.55;
+      setTimeout(()=>{ timeScale = 1; }, 4500);
+    } else if(pu.type==='boost'){
+      magnet.boost = 6.0;
+      magnet.attractRadius = 320;
+    }
+    // Play pickup sound
+    sounds.pickup.play();
+    spawnParticles(pu.x, pu.y, POWERUP_CONFIG[pu.type].color, 12);
+  }
+
+  // update logic
+  function update(dtReal){
+    const dt = dtReal * timeScale;
+    t += dt;
+    magnet.x += (magnet.targetX - magnet.x) * Math.min(1, dt*12);
+    magnet.y += (magnet.targetY - magnet.y) * Math.min(1, dt*12);
+
+    for(let i=collectibles.length-1;i>=0;i--){
+      const c = collectibles[i];
+      if(c.attached) continue;
+      c.x += c.vx * dt;
+      c.y += c.vy * dt;
+      c.x += -c.z * 8 * dt;
+      const dx = magnet.x - c.x, dy = magnet.y - c.y;
+      const dist = Math.sqrt(dx*dx + dy*dy)||1;
+      if(dist < magnet.attractRadius){
+        const shouldAttract = (magnet.polarity==='N' && c.pole==='S') || (magnet.polarity==='S' && c.pole==='N');
+        let forceBase = 650;
+        if(magnet.boost>0) forceBase *= 1.6;
+        const force = (1 - dist / magnet.attractRadius) * (shouldAttract ? forceBase : -forceBase*0.5);
+        c.vx += (dx/dist) * (force * dt) * 0.001;
+        c.vy += (dy/dist) * (force * dt) * 0.001;
+        c.z += (magnet.z - c.z) * dt * 0.6;
+      }
+      const attachPoint = chain.links.length>0 ? chain.links[chain.links.length-1] : null;
+      const ax = attachPoint ? attachPoint.x : magnet.x;
+      const ay = attachPoint ? attachPoint.y : magnet.y;
+      const ddx = c.x - ax, ddy = c.y - ay;
+      const d2 = Math.sqrt(ddx*ddx+ddy*ddy);
+      if(d2 < 28 && !c.attached) attachCollectible(c);
+      if(c.x < -140) collectibles.splice(i,1);
+    }
+
+    for(let i=hazards.length-1;i>=0;i--){
+      const h = hazards[i];
+      h.x += h.vx * dt;
+      if(h.x + h.w < -200) hazards.splice(i,1);
+      else chainHazardCollision(h);
+    }
+
+    for(let i=powerups.length-1;i>=0;i--){
+      const p = powerups[i];
+      p.x += p.vx * dt;
+      const cfg = POWERUP_CONFIG[p.type];
+      const dx = p.x - magnet.x, dy = p.y - magnet.y;
+      if(Math.sqrt(dx*dx+dy*dy) < Math.max(44, cfg.radius + magnet.radius)){
+        pickupPowerup(p);
+        for(let j=0;j<10;j++) particles.push({x:p.x+rand(-4,4), y:p.y+rand(-4,4), life:0.45, color:cfg.color, size:6+Math.random()*8});
+        powerups.splice(i,1);
+      } else if(p.x < -160) powerups.splice(i,1);
+    }
+
+    simulateChain(dt);
+
+    // magnet head collision with hazards -> game over if no shield
+    for(let h of hazards){
+      if(Math.abs(magnet.z - h.z) < 0.55){
+        if(magnet.x > h.x - 6 && magnet.x < h.x + h.w + 6 && magnet.y > h.y - h.h/2 -6 && magnet.y < h.y + h.h/2 +6){
+          if(magnet.shield > 0){
+            magnet.shield = 0;
+            const rem = Math.min(chain.links.length-1, 4 + Math.floor(combo));
+            for(let r=0;r<rem;r++){ 
+              const p = chain.links.pop(); 
+              if(p) {
+                spawnParticles(p.x,p.y,'#ffddcc',10);
+                // Create negative score animation
+                createScoreAnimation(p.x, p.y, "-1", "#ff6666");
+              }
+            }
+            magnet.targetX -= Math.sign(h.vx) * 60;
+            break;
+          } else {
+            // Play crash sound
+            sounds.crash.play();
+            endRun();
+            return;
+          }
+        }
+      }
+    }
+
+    for(let i=particles.length-1;i>=0;i--){
+      const p = particles[i];
+      p.life -= dt;
+      p.y -= 30 * dt;
+      if(p.life <= 0) particles.splice(i,1);
+    }
+
+    // Update score animations
+    for(let i=scoreAnimations.length-1;i>=0;i--){
+      const anim = scoreAnimations[i];
+      anim.life -= dt;
+      anim.y -= 50 * dt;
+      if(anim.life <= 0) scoreAnimations.splice(i,1);
+    }
+
+    if(magnet.shield > 0){ magnet.shield -= dt; if(magnet.shield < 0) magnet.shield = 0; }
+    if(magnet.boost > 0){ magnet.boost -= dt; if(magnet.boost <= 0){ magnet.boost = 0; magnet.attractRadius = 220; boostTxt.textContent = '0'; } }
+    if(comboTimer > 0) comboTimer -= dt; else combo = Math.max(1, combo - dt*0.8);
+    combo = Math.max(1, Math.min(8, combo));
+    updateComboUI(); updatePowerUI();
+
+    if(Math.random() < 0.021 + Math.min(0.05, t*0.00008)) spawnWave();
+    lenEl.textContent = chain.links.length.toString();
+  }
+
+  // draw
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+    ctx.fillStyle = '#041018';
+    ctx.fillRect(0,0,W,H);
+
+    const drawObjs = [...hazards.map(o=>({t:'h',o})), ...collectibles.map(o=>({t:'c',o})), ...powerups.map(o=>({t:'p',o}))];
+    drawObjs.sort((a,b)=> (a.o.z||0) - (b.o.z||0));
+
+    for(let d of drawObjs){
+      if(d.t==='h'){
+        const h = d.o;
+        const s = 1 - (h.z+1)/3;
+        ctx.save();
+        ctx.globalAlpha = 0.95 - Math.abs(h.z)*0.25;
+        ctx.fillStyle = '#7d7d7d';
+        const hh = h.h * s;
+        ctx.fillRect(h.x - h.w/2, h.y - hh/2, h.w, hh);
+        ctx.restore();
+      }
+    }
+
+    ctx.lineJoin='round'; ctx.lineCap='round';
+    ctx.beginPath();
+    ctx.moveTo(magnet.x, magnet.y);
+    for(let i=0;i<chain.links.length;i++) ctx.lineTo(chain.links[i].x, chain.links[i].y);
+    const glow = Math.min(0.9, 0.2 + (combo-1)*0.12);
+    ctx.strokeStyle = `rgba(${Math.floor(80+glow*170)},${Math.floor(240-glow*50)},${Math.floor(255-glow*30)},0.95)`;
+    ctx.lineWidth = 6;
+    ctx.stroke();
+
+    for(let i=0;i<chain.links.length;i++){
+      const p = chain.links[i];
+      ctx.beginPath();
+      ctx.fillStyle = '#c6fbff';
+      ctx.globalAlpha = 0.95 - Math.min(0.6, i*0.01);
+      ctx.arc(p.x,p.y,8,0,Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+    }
+
+    for(let c of collectibles){
+      if(c.attached) continue;
+      const s = 1 - (c.z + 1)/4;
+      const r = 14 * (0.9 + s*0.8);
+      ctx.beginPath();
+      ctx.fillStyle = c.pole === 'N' ? '#ff6b6b' : '#66d0ff';
+      ctx.globalAlpha = 0.95;
+      ctx.arc(c.x, c.y, r, 0, Math.PI*2);
+      ctx.fill();
+      ctx.globalAlpha = 1;
+      ctx.fillStyle = '#061018';
+      ctx.font = 'bold 12px Orbitron, sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline='middle';
+      ctx.fillText(c.pole, c.x, c.y);
+    }
+
+    for(let p of powerups){
+      const cfg = POWERUP_CONFIG[p.type];
+      const bob = Math.sin((t + p.x) * 4) * 2;
+      ctx.save();
+      ctx.beginPath();
+      ctx.fillStyle = cfg.color;
+      ctx.globalAlpha = 0.15;
+      ctx.arc(p.x, p.y + bob, cfg.drawSize * 0.7, 0, Math.PI*2);
+      ctx.fill();
+      ctx.restore();
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.font = `${cfg.drawSize}px serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(cfg.emoji, p.x, p.y + bob);
+      ctx.restore();
+    }
+
+    for(let p of particles){
+      ctx.beginPath();
+      ctx.fillStyle = p.color;
+      ctx.globalAlpha = Math.max(0, p.life*2);
+      ctx.arc(p.x,p.y, p.size * Math.max(0.3, p.life), 0, Math.PI*2);
+      ctx.fill();
+    }
+
+    // Draw score animations
+    for(let anim of scoreAnimations){
+      ctx.save();
+      ctx.globalAlpha = Math.min(1, anim.life * 2);
+      ctx.fillStyle = anim.color;
+      ctx.font = 'bold 20px Orbitron, monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(anim.text, anim.x, anim.y);
+      ctx.restore();
+    }
+
+    ctx.globalAlpha = 1;
+
+    // draw magnet head image or fallback rectangle if image missing
+    // NOTE: Using fixed drawn size 100x50 as in your file; change if you want auto-scaling
+    const imgW = 100, imgH = 50;
+    if(magnetImg.complete && !magnetImg._error){
+      const sx = magnet.x - imgW/2;
+      const sy = magnet.y - imgH/2;
+      ctx.save();
+      if(magnet.shield>0){
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255,230,150,0.12)';
+        ctx.arc(magnet.x, magnet.y, magnet.radius + 22, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.drawImage(magnetImg, sx, sy, imgW, imgH);
+      ctx.restore();
+    } else {
+      // fallback drawn magnet
+      ctx.save();
+      if(magnet.shield>0){
+        ctx.beginPath();
+        ctx.fillStyle = 'rgba(255,230,150,0.12)';
+        ctx.arc(magnet.x, magnet.y, magnet.radius + 22, 0, Math.PI*2);
+        ctx.fill();
+      }
+      ctx.fillStyle = '#222';
+      ctx.fillRect(magnet.x-30, magnet.y-12, 60,24);
+      ctx.fillStyle = '#ff6b6b';
+      ctx.fillRect(magnet.x-30, magnet.y-12, 30,24);
+      ctx.fillStyle = '#66d0ff';
+      ctx.fillRect(magnet.x, magnet.y-12, 30,24);
+      ctx.restore();
+    }
+  }
+
+  // loop
+  let last = performance.now();
+  function loop(now){
+    const dt = Math.min(0.05, (now - last)/1000);
+    last = now;
+    if(running) update(dt);
+    draw();
+    requestAnimationFrame(loop);
+  }
+  requestAnimationFrame(loop);
+
+  // input handlers (touch + mouse)
+  function pointerDownFn(e){
+    e.preventDefault();
+    pointerDown = true;
+    movedSinceDown = false;
+    const p = getPointer(e);
+    lastPointer.x = p.x; lastPointer.y = p.y; lastPointer.t = performance.now();
+    magnet.targetX = p.x; magnet.targetY = p.y;
+  }
+  function pointerMoveFn(e){
+    if(!pointerDown) return;
+    const p = getPointer(e);
+    const dx = p.x - lastPointer.x, dy = p.y - lastPointer.y;
+    if(Math.abs(dx)+Math.abs(dy) > 6) movedSinceDown = true;
+    magnet.targetX = p.x; magnet.targetY = p.y;
+    lastPointer.x = p.x; lastPointer.y = p.y;
+  }
+  function pointerUpFn(e){
+    const p = getPointer(e);
+    pointerDown = false;
+    const dt = performance.now() - lastPointer.t;
+    if(!movedSinceDown && dt < 350){
+      magnet.polarity = magnet.polarity === 'N' ? 'S' : 'N';
+      polTxt.textContent = magnet.polarity;
+      // Play flip sound
+      sounds.flip.play();
+    }
+  }
+  function getPointer(e){
+    if(e.touches && e.touches.length) return { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    return { x: e.clientX || e.pageX, y: e.clientY || e.pageY };
+  }
+
+  // Attach listeners (use passive:false for touchmove to prevent scrolling)
+  canvas.addEventListener('mousedown', pointerDownFn);
+  canvas.addEventListener('mousemove', pointerMoveFn);
+  window.addEventListener('mouseup', pointerUpFn);
+  canvas.addEventListener('touchstart', pointerDownFn,{passive:false});
+  canvas.addEventListener('touchmove', pointerMoveFn,{passive:false});
+  window.addEventListener('touchend', pointerUpFn);
+
+  // Pause on visibility change (save battery)
+  document.addEventListener('visibilitychange', ()=>{
+    if(document.hidden && running){
+      running = false;
+    }
+  });
+
+  // UI & menu
+  const overlay = document.getElementById('overlay');
+  const startBtn = document.getElementById('startBtn');
+  const instrBtn = document.getElementById('instrBtn');
+  const instrModal = document.getElementById('instrModal');
+  const instrClose = document.getElementById('instrClose');
+  const instrClose2 = document.getElementById('instrClose2');
+
+  startBtn.addEventListener('click', async ()=>{
+    // user gesture — unlock fullscreen/audio
+    await goFullscreenAndLock();
+    initAudioOnGesture();
+    overlay.style.display='none';
+    // show mobile touch controls if on small viewport
+    if(window.innerWidth < 900){
+      document.getElementById('touchControls').style.display = 'flex';
+    }
+    startRun();
+  });
+
+  instrBtn.addEventListener('click', ()=>{ instrModal.style.display='flex'; });
+  instrClose.addEventListener('click', ()=>{ instrModal.style.display='none'; });
+  instrClose2.addEventListener('click', async ()=>{
+    instrModal.style.display='none';
+    // also call fullscreen/audio when starting from modal close
+    await goFullscreenAndLock();
+    initAudioOnGesture();
+    overlay.style.display='none';
+    if(window.innerWidth < 900) document.getElementById('touchControls').style.display = 'flex';
+    startRun();
+  });
+
+  function updatePowerUI(){
+    shieldTxt.textContent = magnet.shield>0 ? Math.ceil(magnet.shield) : '0';
+    boostTxt.textContent = magnet.boost>0 ? Math.ceil(magnet.boost) : '0';
+    slowTxt.textContent = timeScale < 0.99 ? 'ON' : '0';
+  }
+  function updateComboUI(){ comboTxt.textContent = 'x' + combo.toFixed(1); comboTxt.style.opacity = 0.95; }
+
+  // Touch control buttons (mobile)
+  const flipBtn = document.getElementById('flipBtn');
+  const pauseBtn = document.getElementById('pauseBtn');
+  flipBtn.addEventListener('touchstart', (e)=>{ e.preventDefault(); initAudioOnGesture(); magnet.polarity = magnet.polarity==='N' ? 'S' : 'N'; polTxt.textContent = magnet.polarity; sounds.flip.play(); });
+  pauseBtn.addEventListener('click', (e)=>{ e.preventDefault(); running = !running; });
+
+  // Initialize sounds on load for desktop; mobile will initialize on gesture
+  initSounds();
+
+  // initial populate
+  for(let i=0;i<3;i++) spawnWave(true);
+
+})();
+</script>
+</body>
+</html>
