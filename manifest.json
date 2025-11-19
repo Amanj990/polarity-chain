@@ -1,10 +1,10 @@
 {
   "name": "Polarity Chain",
   "short_name": "Polarity",
-  "description": "A hyper-casual magnetic chain game where you flip polarity, grow your chain, and dodge hazards.",
+  "description": "A hyper-casual magnetic chain game — flip polarity, collect orbs, and grow the longest chain.",
   "start_url": "./index.html",
   "scope": "./",
-  "display": "fullscreen",
+  "display": "standalone",
   "orientation": "portrait",
   "background_color": "#050819",
   "theme_color": "#050819",
