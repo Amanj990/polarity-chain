@@ -1,0 +1,8 @@
+[{
+      "relation": ["delegate_permission/common.handle_all_urls"],
+      "target": {
+        "namespace": "android_app",
+        "package_name": "com.amanj990.polaritychain",
+        "sha256_cert_fingerprints": ["FF:AF:0A:2C:35:3E:DA:3A:E6:99:87:41:ED:9C:B5:7E:7B:6E:3B:5E:39:3B:40:18:A3:18:81:2B:ED:A6:D6:99"]
+      }
+    }]
