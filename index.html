@@ -6,10 +6,12 @@
 <script>
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
-      navigator.serviceWorker.register('./sw.js').catch(err => console.warn('SW register failed:', err));
+      navigator.serviceWorker.register('./sw.js')
+        .catch(err => console.log('SW registration failed', err));
     });
   }
 </script>
+
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
 <title>Polarity Chain — Playable Prototype</title>
@@ -796,5 +798,6 @@
 </script>
 </body>
 </html>
+
 
 
