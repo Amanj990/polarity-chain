@@ -58,17 +58,18 @@
 </head>
 <body>
 <!-- Intro Animation -->
-<video id="introVideo" playsinline webkit-playsinline preload="auto" style="
-    position:fixed;
-    inset:0;
-    width:100%;
-    height:100%;
-    object-fit:cover;
-    z-index:9999;
-    background:black;
-" >
+<video id="introVideo" playsinline webkit-playsinline muted preload="auto"
+       poster="icons/icon-512.png"
+       style="position:fixed;inset:0;width:100%;height:100%;object-fit:cover;z-index:9999;background:black">
   <source src="intro.mp4" type="video/mp4">
 </video>
+
+<button id="skipIntro"
+        style="position:fixed;right:16px;top:16px;z-index:10000;
+               padding:10px 12px;border-radius:8px;
+               background:rgba(0,0,0,0.5);color:#fff;border:0;">
+  Skip
+</button>
 
 <canvas id="c"></canvas>
 
@@ -796,8 +797,56 @@
 
 })();
 </script>
+ <script>
+  (function () {
+    const introVideo = document.getElementById('introVideo');
+    const skipBtn = document.getElementById('skipIntro');
+    const menu = document.getElementById('menu');
+
+    function showMenu() {
+      if (introVideo) {
+        try { introVideo.pause(); } catch (e) {}
+        introVideo.style.display = 'none';
+      }
+      if (skipBtn) skipBtn.style.display = 'none';
+      if (menu) menu.style.display = 'block';
+    }
+
+    // Try autoplay muted on load
+    window.addEventListener('load', () => {
+      if (!introVideo) {
+        showMenu();
+        return;
+      }
+      introVideo.muted = true;
+      const playPromise = introVideo.play();
+      if (playPromise && playPromise.catch) {
+        playPromise.catch(() => {
+          // If autoplay is blocked, just show menu so user isn't stuck
+          showMenu();
+        });
+      }
+    });
+
+    if (introVideo) {
+      introVideo.addEventListener('ended', showMenu);
+    }
+    if (skipBtn) {
+      skipBtn.addEventListener('click', showMenu);
+    }
+
+    // Extra safety: if nothing started after 4s, show menu anyway
+    setTimeout(() => {
+      if (!introVideo) return;
+      if (introVideo.readyState < 2 || introVideo.paused) {
+        showMenu();
+      }
+    }, 4000);
+  })();
+</script>
 </body>
 </html>
+
 
 
 
