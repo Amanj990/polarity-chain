@@ -63,23 +63,10 @@
   background:black; display:flex; justify-content:center;
   align-items:center; flex-direction:column;">
 
-  <video id="introVideo" playsinline webkit-playsinline muted preload="metadata"
+  <video id="introVideo" playsinline webkit-playsinline muted preload="auto" autoplay
          style="width:100%;max-height:100%;object-fit:cover;">
       <source src="intro.mp4?cache=1" type="video/mp4">
   </video>
-
-  <button id="playIntro" style="
-    margin-top:20px;background:#1f6feb;color:white;border:0;
-    padding:14px 24px;border-radius:10px;font-size:20px;">
-    ▶ TAP TO PLAY INTRO
-  </button>
-
-  <button id="skipIntro" style="
-    margin-top:10px;background:#444;color:white;border:0;
-    padding:10px 18px;border-radius:8px;font-size:14px;">
-    Skip Intro
-  </button>
-
 </div>
 <canvas id="c"></canvas>
 
@@ -816,27 +803,25 @@ function finishIntro() {
   if (menu) menu.style.display = 'block';
 }
 
-document.getElementById('playIntro').onclick = () => {
+// Auto-play intro when page loads
+document.addEventListener('DOMContentLoaded', () => {
   const vid = document.getElementById('introVideo');
-
-  // Try to play the video
+  
+  // Try to auto-play the video
   vid.play().then(() => {
     vid.onended = finishIntro;
   }).catch(() => {
-    // If browser blocks autoplay → skip intro
+    // If auto-play fails, show menu immediately
     finishIntro();
   });
-};
 
-// Skip button always works
-document.getElementById('skipIntro').onclick = finishIntro;
-
-// Safety fallback in case video fails silently
-setTimeout(() => finishIntro(), 7000);
+  // Safety fallback in case video fails to load or play
+  setTimeout(() => finishIntro(), 3000);
+});
 </script>
-
 </body>
 </html>
+
 
 
 
