@@ -2,7 +2,7 @@
   "name": "Polarity Chain",
   "short_name": "Polarity",
   "description": "A hyper-casual magnetic chain game — flip polarity, collect orbs, and grow the longest chain.",
-  "start_url": "./index.html",
+  "start_url": "/polarity-chain/",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
